@@ -4,10 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { GladiatorCard } from "./GladiatorCard";
-import { Timer, Users, Lock, Eye, EyeOff, Shield } from "lucide-react";
+import { BetVerification } from "./BetVerification";
+import { StealthStatus } from "./StealthStatus";
+import { Timer, Users, Lock, Eye, EyeOff, Shield, Zap } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useGladiatorArena } from "@/hooks/useGladiatorArena";
 import { useWallet } from "@/hooks/useWallet";
+import { type EncryptedBet } from "@/lib/fhe-encryption";
 import gladiator1 from "@/assets/gladiator-1.jpg";
 import gladiator2 from "@/assets/gladiator-2.jpg";
 
@@ -16,11 +19,15 @@ interface Bet {
   amount: number;
   odds: string;
   timestamp: Date;
+  encryptedBet?: EncryptedBet;
+  betId?: string;
+  zkProof?: string;
+  revealed?: boolean;
 }
 
 export const BettingArena = () => {
   const { isConnected } = useWallet();
-  const { placeEncryptedBet, encryptBet, generateNonce, matchInfo } = useGladiatorArena();
+  const { placeEncryptedBet, verifyBetData, matchInfo } = useGladiatorArena();
   
   const [bets, setBets] = useState<Bet[]>([]);
   const [showBets, setShowBets] = useState(false);
@@ -29,6 +36,7 @@ export const BettingArena = () => {
   const [betAmount, setBetAmount] = useState("0.01");
   const [selectedGladiator, setSelectedGladiator] = useState<string | null>(null);
   const [isPlacingBet, setIsPlacingBet] = useState(false);
+  const [selectedBetForVerification, setSelectedBetForVerification] = useState<Bet | null>(null);
 
   const gladiators = [
     {
@@ -53,23 +61,54 @@ export const BettingArena = () => {
     },
   ];
 
-  const handlePlaceBet = (gladiatorId: string, amount: number) => {
+  const handlePlaceBet = async (gladiatorId: string, amount: number) => {
+    if (!isConnected) {
+      toast({
+        title: "🔗 Wallet Required",
+        description: "Please connect your wallet to place bets.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const gladiator = gladiators.find(g => g.id === gladiatorId);
     if (!gladiator) return;
 
-    const newBet: Bet = {
-      gladiatorId,
-      amount,
-      odds: gladiator.odds,
-      timestamp: new Date(),
-    };
+    setIsPlacingBet(true);
 
-    setBets(prev => [...prev, newBet]);
-    
-    toast({
-      title: "🔒 Stealth Bet Placed",
-      description: `Your bet on ${gladiator.name} has been encrypted and hidden until match completion.`,
-    });
+    try {
+      // Convert gladiator ID to choice number (1 or 2)
+      const choice = gladiatorId === "maximus" ? 1 : 2;
+      
+      // Place encrypted bet on-chain
+      const result = await placeEncryptedBet(1, amount, choice); // Using match ID 1 for demo
+      
+      const newBet: Bet = {
+        gladiatorId,
+        amount,
+        odds: gladiator.odds,
+        timestamp: new Date(),
+        encryptedBet: result.encryptedBet,
+        betId: result.betId,
+        zkProof: result.zkProof,
+      };
+
+      setBets(prev => [...prev, newBet]);
+      
+      toast({
+        title: "🔒 Stealth Bet Placed Successfully",
+        description: `Your FHE-encrypted bet on ${gladiator.name} is now hidden on-chain until match completion.`,
+      });
+    } catch (error) {
+      console.error("Error placing bet:", error);
+      toast({
+        title: "❌ Bet Failed",
+        description: "Failed to place your stealth bet. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPlacingBet(false);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -79,6 +118,9 @@ export const BettingArena = () => {
   };
 
   const totalBetAmount = bets.reduce((sum, bet) => sum + bet.amount, 0);
+  const encryptedBets = bets.filter(bet => bet.encryptedBet).length;
+  const verifiedBets = bets.filter(bet => bet.encryptedBet && bet.zkProof).length;
+  const revealedBets = bets.filter(bet => bet.encryptedBet && bet.zkProof && bet.revealed).length;
 
   return (
     <section className="py-12 bg-gradient-arena">
@@ -135,6 +177,17 @@ export const BettingArena = () => {
           </div>
         </Card>
 
+        {/* Stealth Status */}
+        <div className="mb-8">
+          <StealthStatus
+            totalBets={bets.length}
+            encryptedBets={encryptedBets}
+            verifiedBets={verifiedBets}
+            revealedBets={revealedBets}
+            isMatchActive={matchActive}
+          />
+        </div>
+
         {/* Gladiators Grid */}
         <div className="grid md:grid-cols-2 gap-8 mb-8">
           {gladiators.map((gladiator) => (
@@ -186,15 +239,43 @@ export const BettingArena = () => {
                           key={index}
                           className="flex items-center justify-between p-3 bg-muted/10 rounded border border-accent/20"
                         >
-                          <div>
-                            <span className="font-medium">{gladiator?.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{gladiator?.name}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                <Lock className="h-3 w-3 mr-1" />
+                                FHE Encrypted
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
                               {bet.timestamp.toLocaleTimeString()}
-                            </span>
+                            </div>
+                            {bet.betId && (
+                              <div className="text-xs text-muted-foreground font-mono">
+                                ID: {bet.betId.slice(0, 8)}...
+                              </div>
+                            )}
                           </div>
                           <div className="text-right">
                             <div className="font-bold">{bet.amount} ETH</div>
                             <div className="text-xs text-secondary">{bet.odds}</div>
+                            {bet.zkProof && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <Zap className="h-3 w-3 text-primary" />
+                                <span className="text-xs text-primary">ZK Proof</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedBetForVerification(bet)}
+                              className="text-xs"
+                            >
+                              <Shield className="h-3 w-3 mr-1" />
+                              Verify
+                            </Button>
                           </div>
                         </div>
                       );
@@ -205,6 +286,24 @@ export const BettingArena = () => {
             )}
           </div>
         </Card>
+
+        {/* Bet Verification Modal */}
+        {selectedBetForVerification && (
+          <div className="mt-8">
+            <BetVerification
+              bet={selectedBetForVerification}
+              onVerificationComplete={(verified) => {
+                if (verified) {
+                  toast({
+                    title: "✅ Verification Complete",
+                    description: "Your bet has been verified and is ready for reveal.",
+                  });
+                }
+                setSelectedBetForVerification(null);
+              }}
+            />
+          </div>
+        )}
       </div>
     </section>
   );

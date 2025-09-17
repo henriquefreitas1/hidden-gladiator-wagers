@@ -1,5 +1,12 @@
 import { useWriteContract, useReadContract, useAccount } from 'wagmi';
-import { parseEther, formatEther } from 'viem';
+import { parseEther, formatEther, keccak256 } from 'viem';
+import { 
+  createStealthBet, 
+  verifyEncryptedBet, 
+  formatForContract,
+  type BetData,
+  type EncryptedBet 
+} from '@/lib/fhe-encryption';
 
 // Contract ABI (simplified for demonstration)
 const GLADIATOR_ARENA_ABI = [
@@ -125,21 +132,45 @@ export const useGladiatorArena = () => {
 
   const placeEncryptedBet = async (
     matchId: number,
-    encryptedBet: string,
-    nonce: string,
-    betAmount: string
+    betAmount: number,
+    gladiatorChoice: number
   ) => {
     if (!placeBet) throw new Error('Contract not initialized');
+    
+    // Create FHE encrypted bet data
+    const betData: BetData = {
+      amount: betAmount,
+      choice: gladiatorChoice,
+      matchId: matchId
+    };
+    
+    const { encryptedBet, betId, zkProof } = createStealthBet(betData);
+    const contractData = formatForContract(encryptedBet);
+    
+    // Create commitment for contract verification
+    const commitment = keccak256(
+      contractData.encryptedAmount + 
+      contractData.encryptedChoice + 
+      contractData.nonce + 
+      address + 
+      matchId.toString()
+    );
     
     const tx = await placeBet({
       address: CONTRACT_ADDRESS as `0x${string}`,
       abi: GLADIATOR_ARENA_ABI,
       functionName: 'placeBet',
-      args: [BigInt(matchId), encryptedBet as `0x${string}`, nonce as `0x${string}`],
-      value: parseEther(betAmount),
+      args: [
+        BigInt(matchId),
+        contractData.encryptedAmount as `0x${string}`,
+        contractData.encryptedChoice as `0x${string}`,
+        contractData.nonce as `0x${string}`,
+        commitment as `0x${string}`
+      ],
+      value: parseEther(betAmount.toString()),
     });
     
-    return tx;
+    return { tx, betId, zkProof, encryptedBet };
   };
 
   const completeGladiatorMatch = async (matchId: number, winner: number) => {
@@ -157,32 +188,34 @@ export const useGladiatorArena = () => {
 
   const revealAndClaimBet = async (
     matchId: number,
-    betAmount: string,
+    betAmount: number,
     choice: number,
-    nonce: string
+    encryptedBet: EncryptedBet
   ) => {
     if (!revealBetAndClaim) throw new Error('Contract not initialized');
+    
+    const contractData = formatForContract(encryptedBet);
     
     const tx = await revealBetAndClaim({
       address: CONTRACT_ADDRESS as `0x${string}`,
       abi: GLADIATOR_ARENA_ABI,
       functionName: 'revealBetAndClaim',
-      args: [BigInt(matchId), parseEther(betAmount), BigInt(choice), nonce as `0x${string}`],
+      args: [
+        BigInt(matchId),
+        parseEther(betAmount.toString()),
+        BigInt(choice),
+        contractData.nonce as `0x${string}`,
+        contractData.encryptedAmount as `0x${string}`,
+        contractData.encryptedChoice as `0x${string}`
+      ],
     });
     
     return tx;
   };
 
-  // FHE Encryption helper (simplified)
-  const encryptBet = (amount: number, choice: number, nonce: string): string => {
-    // Simplified encryption for demonstration
-    const combined = (amount << 8) | choice;
-    const encrypted = (combined ^ parseInt(nonce.slice(2), 16)) % (2**256 - 1);
-    return '0x' + encrypted.toString(16).padStart(64, '0');
-  };
-
-  const generateNonce = (): string => {
-    return '0x' + Math.random().toString(16).slice(2, 18).padStart(16, '0');
+  // Verify bet data locally before revealing
+  const verifyBetData = (betData: BetData, encryptedBet: EncryptedBet): boolean => {
+    return verifyEncryptedBet(encryptedBet, betData);
   };
 
   return {
@@ -190,8 +223,7 @@ export const useGladiatorArena = () => {
     placeEncryptedBet,
     completeGladiatorMatch,
     revealAndClaimBet,
-    encryptBet,
-    generateNonce,
+    verifyBetData,
     matchInfo,
     userBetInfo,
     refetchMatchInfo,

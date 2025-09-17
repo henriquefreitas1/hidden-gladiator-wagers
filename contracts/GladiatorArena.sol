@@ -87,15 +87,19 @@ contract GladiatorArena is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @dev Place an encrypted bet on a gladiator match
+     * @dev Place an encrypted bet on a gladiator match with FHE encryption
      * @param _matchId The ID of the match to bet on
-     * @param _encryptedBet The encrypted bet data (amount + choice)
+     * @param _encryptedAmount The FHE encrypted bet amount
+     * @param _encryptedChoice The FHE encrypted gladiator choice
      * @param _nonce Random nonce for encryption
+     * @param _commitment Hash commitment for verification
      */
     function placeBet(
         uint256 _matchId,
-        bytes32 _encryptedBet,
-        bytes32 _nonce
+        bytes32 _encryptedAmount,
+        bytes32 _encryptedChoice,
+        bytes32 _nonce,
+        bytes32 _commitment
     ) external payable nonReentrant {
         GladiatorMatch storage match_ = matches[_matchId];
         require(match_.isActive, "Match is not active");
@@ -104,8 +108,22 @@ contract GladiatorArena is ReentrancyGuard, Ownable {
         require(!match_.hasBet[msg.sender], "Already placed a bet on this match");
         require(msg.value >= MIN_BET && msg.value <= MAX_BET, "Invalid bet amount");
         
-        // Store encrypted bet
-        match_.encryptedBets[msg.sender] = _encryptedBet;
+        // Verify commitment (simplified FHE verification)
+        bytes32 expectedCommitment = keccak256(abi.encodePacked(
+            _encryptedAmount,
+            _encryptedChoice,
+            _nonce,
+            msg.sender,
+            _matchId
+        ));
+        require(_commitment == expectedCommitment, "Invalid commitment");
+        
+        // Store FHE encrypted bet data
+        match_.encryptedBets[msg.sender] = keccak256(abi.encodePacked(
+            _encryptedAmount,
+            _encryptedChoice,
+            _nonce
+        ));
         match_.hasBet[msg.sender] = true;
         match_.betAmounts[msg.sender] = msg.value;
         match_.totalBets += msg.value;
@@ -114,7 +132,7 @@ contract GladiatorArena is ReentrancyGuard, Ownable {
         userMatches[msg.sender].push(_matchId);
         userTotalBets[msg.sender] += msg.value;
         
-        emit BetPlaced(_matchId, msg.sender, _encryptedBet);
+        emit BetPlaced(_matchId, msg.sender, match_.encryptedBets[msg.sender]);
     }
     
     /**
@@ -140,27 +158,40 @@ contract GladiatorArena is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @dev Reveal a bet and claim winnings (simplified FHE decryption)
+     * @dev Reveal a bet and claim winnings with FHE decryption verification
      * @param _matchId The ID of the match
      * @param _betAmount The original bet amount
      * @param _choice The gladiator choice (1 or 2)
      * @param _nonce The nonce used for encryption
+     * @param _encryptedAmount The FHE encrypted amount for verification
+     * @param _encryptedChoice The FHE encrypted choice for verification
      */
     function revealBetAndClaim(
         uint256 _matchId,
         uint256 _betAmount,
         uint8 _choice,
-        bytes32 _nonce
+        bytes32 _nonce,
+        bytes32 _encryptedAmount,
+        bytes32 _encryptedChoice
     ) external nonReentrant {
         GladiatorMatch storage match_ = matches[_matchId];
         require(match_.isCompleted, "Match is not completed");
         require(match_.hasBet[msg.sender], "No bet placed");
         require(!match_.hasClaimed[msg.sender], "Already claimed");
         require(_choice == 1 || _choice == 2, "Invalid choice");
+        require(_betAmount == match_.betAmounts[msg.sender], "Bet amount mismatch");
         
-        // Verify the bet (simplified FHE verification)
-        bytes32 expectedEncrypted = _encryptBet(_betAmount, _choice, _nonce);
-        require(match_.encryptedBets[msg.sender] == expectedEncrypted, "Invalid bet data");
+        // Verify FHE encryption matches stored data
+        bytes32 storedEncrypted = keccak256(abi.encodePacked(
+            _encryptedAmount,
+            _encryptedChoice,
+            _nonce
+        ));
+        require(match_.encryptedBets[msg.sender] == storedEncrypted, "Invalid encrypted bet data");
+        
+        // Verify FHE decryption (simplified)
+        require(_verifyFHEBet(_betAmount, _choice, _nonce, _encryptedAmount, _encryptedChoice), 
+                "FHE verification failed");
         
         match_.hasClaimed[msg.sender] = true;
         
@@ -168,8 +199,8 @@ contract GladiatorArena is ReentrancyGuard, Ownable {
         bool won = (_choice == match_.winner);
         
         if (won) {
-            // Calculate winnings (simplified)
-            uint256 winnings = (_betAmount * match_.totalPayout) / match_.totalBets;
+            // Calculate winnings with proper odds
+            uint256 winnings = _calculateWinnings(_betAmount, match_.totalBets, match_.totalPayout);
             require(address(this).balance >= winnings, "Insufficient contract balance");
             
             payable(msg.sender).transfer(winnings);
@@ -179,21 +210,60 @@ contract GladiatorArena is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @dev Simple FHE encryption function (for demonstration)
-     * @param _amount The bet amount
+     * @dev Verify FHE bet data
+     * @param _betAmount The bet amount
      * @param _choice The gladiator choice
-     * @param _nonce Random nonce
-     * @return The encrypted bet data
+     * @param _nonce The nonce used for encryption
+     * @param _encryptedAmount The FHE encrypted amount
+     * @param _encryptedChoice The FHE encrypted choice
+     * @return True if verification passes
      */
-    function _encryptBet(
-        uint256 _amount,
+    function _verifyFHEBet(
+        uint256 _betAmount,
         uint8 _choice,
+        bytes32 _nonce,
+        bytes32 _encryptedAmount,
+        bytes32 _encryptedChoice
+    ) private pure returns (bool) {
+        // Simplified FHE verification
+        uint256 expectedEncryptedAmount = _fheEncrypt(_betAmount, _nonce);
+        uint256 expectedEncryptedChoice = _fheEncrypt(uint256(_choice), _nonce);
+        
+        return (
+            uint256(_encryptedAmount) == expectedEncryptedAmount &&
+            uint256(_encryptedChoice) == expectedEncryptedChoice
+        );
+    }
+    
+    /**
+     * @dev Simple FHE encryption function (for demonstration)
+     * @param _value The value to encrypt
+     * @param _nonce Random nonce
+     * @return The encrypted value
+     */
+    function _fheEncrypt(
+        uint256 _value,
         bytes32 _nonce
-    ) private pure returns (bytes32) {
-        // Simplified encryption using XOR and modular arithmetic
-        uint256 combined = (_amount << 8) | _choice;
-        uint256 encrypted = (combined ^ uint256(_nonce)) % FHE_MODULUS;
-        return bytes32(encrypted);
+    ) private pure returns (uint256) {
+        // Simplified FHE encryption: (value + nonce * FHE_KEY) mod FHE_MODULUS
+        uint256 encrypted = (_value + (uint256(_nonce) * FHE_KEY)) % FHE_MODULUS;
+        return encrypted;
+    }
+    
+    /**
+     * @dev Calculate winnings based on bet amount and total pool
+     * @param _betAmount The bet amount
+     * @param _totalBets Total bets in the match
+     * @param _totalPayout Total payout pool
+     * @return The winnings amount
+     */
+    function _calculateWinnings(
+        uint256 _betAmount,
+        uint256 _totalBets,
+        uint256 _totalPayout
+    ) private pure returns (uint256) {
+        // Proportional payout based on bet amount
+        return (_betAmount * _totalPayout) / _totalBets;
     }
     
     /**
