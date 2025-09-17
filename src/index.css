@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Stealth Arena Bets - Gladiator Arena Design System */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+@layer base {
+  :root {
+    /* Arena Colors - Dark Stone & Fire */
+    --background: 20 8% 8%;
+    --foreground: 45 40% 92%;
+
+    --card: 20 12% 12%;
+    --card-foreground: 45 40% 92%;
+
+    --popover: 20 15% 10%;
+    --popover-foreground: 45 40% 92%;
+
+    /* Fire Primary Colors */
+    --primary: 15 85% 55%;
+    --primary-foreground: 20 8% 8%;
+
+    /* Gold Secondary */
+    --secondary: 45 90% 65%;
+    --secondary-foreground: 20 8% 8%;
+
+    /* Muted Stone */
+    --muted: 20 8% 18%;
+    --muted-foreground: 45 15% 65%;
+
+    /* Bronze Accent */
+    --accent: 25 60% 45%;
+    --accent-foreground: 45 40% 92%;
+
+    /* Danger Red */
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 45 40% 92%;
+
+    --border: 20 12% 22%;
+    --input: 20 12% 15%;
+    --ring: 15 85% 55%;
+
+    --radius: 0.75rem;
+
+    /* Fire Gradients */
+    --gradient-fire: linear-gradient(135deg, hsl(15 85% 55%), hsl(25 90% 60%), hsl(35 85% 65%));
+    --gradient-ember: linear-gradient(45deg, hsl(15 75% 35%), hsl(25 80% 45%));
+    --gradient-gold: linear-gradient(135deg, hsl(45 90% 65%), hsl(40 85% 70%));
+    --gradient-arena: linear-gradient(180deg, hsl(20 8% 8%), hsl(20 12% 12%));
+
+    /* Shadows */
+    --shadow-fire: 0 10px 30px -5px hsl(15 85% 35% / 0.4);
+    --shadow-gold: 0 8px 25px -8px hsl(45 90% 45% / 0.3);
+    --shadow-arena: 0 20px 60px -20px hsl(20 8% 5% / 0.8);
+
+    /* Arena Stone Texture */
+    --texture-stone: radial-gradient(circle at 25% 25%, hsl(20 12% 15%) 0%, transparent 50%), 
+                     radial-gradient(circle at 75% 75%, hsl(20 8% 12%) 0%, transparent 50%);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
