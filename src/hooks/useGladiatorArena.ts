@@ -1,4 +1,4 @@
-import { useContract, useContractWrite, useContractRead, useAccount } from 'wagmi';
+import { useWriteContract, useReadContract, useAccount } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 
 // Contract ABI (simplified for demonstration)
@@ -88,47 +88,22 @@ const CONTRACT_ADDRESS = '0x0000000000000000000000000000000000000000'; // Update
 export const useGladiatorArena = () => {
   const { address } = useAccount();
   
-  // Contract instance
-  const contract = useContract({
-    address: CONTRACT_ADDRESS,
-    abi: GLADIATOR_ARENA_ABI,
-  });
-
   // Contract write functions
-  const { writeAsync: createMatch } = useContractWrite({
-    address: CONTRACT_ADDRESS,
-    abi: GLADIATOR_ARENA_ABI,
-    functionName: 'createMatch',
-  });
-
-  const { writeAsync: placeBet } = useContractWrite({
-    address: CONTRACT_ADDRESS,
-    abi: GLADIATOR_ARENA_ABI,
-    functionName: 'placeBet',
-  });
-
-  const { writeAsync: completeMatch } = useContractWrite({
-    address: CONTRACT_ADDRESS,
-    abi: GLADIATOR_ARENA_ABI,
-    functionName: 'completeMatch',
-  });
-
-  const { writeAsync: revealBetAndClaim } = useContractWrite({
-    address: CONTRACT_ADDRESS,
-    abi: GLADIATOR_ARENA_ABI,
-    functionName: 'revealBetAndClaim',
-  });
+  const { writeContract: createMatch } = useWriteContract();
+  const { writeContract: placeBet } = useWriteContract();
+  const { writeContract: completeMatch } = useWriteContract();
+  const { writeContract: revealBetAndClaim } = useWriteContract();
 
   // Contract read functions
-  const { data: matchInfo, refetch: refetchMatchInfo } = useContractRead({
-    address: CONTRACT_ADDRESS,
+  const { data: matchInfo, refetch: refetchMatchInfo } = useReadContract({
+    address: CONTRACT_ADDRESS as `0x${string}`,
     abi: GLADIATOR_ARENA_ABI,
     functionName: 'getMatchInfo',
     args: [1n], // Example match ID
   });
 
-  const { data: userBetInfo, refetch: refetchUserBetInfo } = useContractRead({
-    address: CONTRACT_ADDRESS,
+  const { data: userBetInfo, refetch: refetchUserBetInfo } = useReadContract({
+    address: CONTRACT_ADDRESS as `0x${string}`,
     abi: GLADIATOR_ARENA_ABI,
     functionName: 'getUserBetInfo',
     args: address ? [1n, address] : undefined, // Example match ID
@@ -139,6 +114,9 @@ export const useGladiatorArena = () => {
     if (!createMatch) throw new Error('Contract not initialized');
     
     const tx = await createMatch({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: GLADIATOR_ARENA_ABI,
+      functionName: 'createMatch',
       args: [BigInt(startTime)],
     });
     
@@ -154,6 +132,9 @@ export const useGladiatorArena = () => {
     if (!placeBet) throw new Error('Contract not initialized');
     
     const tx = await placeBet({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: GLADIATOR_ARENA_ABI,
+      functionName: 'placeBet',
       args: [BigInt(matchId), encryptedBet as `0x${string}`, nonce as `0x${string}`],
       value: parseEther(betAmount),
     });
@@ -165,6 +146,9 @@ export const useGladiatorArena = () => {
     if (!completeMatch) throw new Error('Contract not initialized');
     
     const tx = await completeMatch({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: GLADIATOR_ARENA_ABI,
+      functionName: 'completeMatch',
       args: [BigInt(matchId), BigInt(winner)],
     });
     
@@ -180,6 +164,9 @@ export const useGladiatorArena = () => {
     if (!revealBetAndClaim) throw new Error('Contract not initialized');
     
     const tx = await revealBetAndClaim({
+      address: CONTRACT_ADDRESS as `0x${string}`,
+      abi: GLADIATOR_ARENA_ABI,
+      functionName: 'revealBetAndClaim',
       args: [BigInt(matchId), parseEther(betAmount), BigInt(choice), nonce as `0x${string}`],
     });
     
@@ -199,7 +186,6 @@ export const useGladiatorArena = () => {
   };
 
   return {
-    contract,
     createNewMatch,
     placeEncryptedBet,
     completeGladiatorMatch,
