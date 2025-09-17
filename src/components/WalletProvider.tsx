@@ -5,8 +5,8 @@ import { sepolia } from 'wagmi/chains';
 import { http } from 'viem';
 
 // Get environment variables
-const projectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID || 'your_project_id_here';
-const rpcUrl = import.meta.env.VITE_RPC_URL || 'your_sepolia_rpc_url_here';
+const projectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID || '2ec9743d0d0cd7fb94dee1a7e6d33475';
+const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://sepolia.infura.io/v3/b18fb7e6ca7045ac83c41157ab93f990';
 
 // Configure wallets
 const { connectors } = getDefaultWallets({
@@ -29,11 +29,17 @@ interface WalletProviderProps {
 }
 
 export const WalletProvider = ({ children }: WalletProviderProps) => {
-  return (
-    <WagmiProvider config={wagmiConfig}>
-      <RainbowKitProvider chains={[sepolia]}>
-        {children}
-      </RainbowKitProvider>
-    </WagmiProvider>
-  );
+  try {
+    return (
+      <WagmiProvider config={wagmiConfig}>
+        <RainbowKitProvider chains={[sepolia]}>
+          {children}
+        </RainbowKitProvider>
+      </WagmiProvider>
+    );
+  } catch (error) {
+    console.error('Wallet provider error:', error);
+    // Fallback without wallet functionality
+    return <>{children}</>;
+  }
 };
